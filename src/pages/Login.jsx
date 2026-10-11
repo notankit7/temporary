@@ -1,21 +1,28 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Droplets, Sprout, ArrowLeft } from 'lucide-react';
+import { login, saveSession } from '../services/api';
 
 const Login = ({ setAuth }) => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !pass) { setError('Please fill all fields'); return; }
-    if (pass.length < 4) { setError('Password too short'); return; }
-    localStorage.setItem('auth_token', 'true');
-    localStorage.setItem('user_name', email.split('@')[0]);
-    if (setAuth) setAuth(true);
-    navigate('/app/dashboard');
+    setError('');
+    setLoading(true);
+    try {
+      saveSession(await login(email, pass));
+      if (setAuth) setAuth(true);
+      navigate('/app/dashboard');
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
   };
 
   return (
@@ -39,7 +46,7 @@ const Login = ({ setAuth }) => {
             <label>Password</label>
             <input type="password" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)} />
           </div>
-          <button type="submit" className="btn auth-btn">Login</button>
+          <button type="submit" className="btn auth-btn" disabled={loading}>{loading ? 'Logging in…' : 'Login'}</button>
         </form>
 
         <div className="auth-footer">

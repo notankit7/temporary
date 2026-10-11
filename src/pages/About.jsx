@@ -26,8 +26,8 @@ const About = () => (
     <div className="tech-grid">
       {[
         { icon:<Code size={28} color="#61dafb"/>, title:'Frontend', desc:'React, HTML, CSS, JS' },
-        { icon:<Server size={28} color="#3776ab"/>, title:'Backend', desc:'Python (Flask/Django)' },
-        { icon:<Cpu size={28} color="var(--warning)"/>, title:'AI / ML', desc:'Prediction Models' },
+        { icon:<Server size={28} color="#539e43"/>, title:'Backend', desc:'Node.js, Express, MongoDB' },
+        { icon:<Cpu size={28} color="var(--warning)"/>, title:'Advisory Engine', desc:'Crop rules + weather forecast' },
         { icon:<Database size={28} color="var(--primary)"/>, title:'IoT Sensors', desc:'Moisture, Temp, Humidity' },
       ].map((t,i) => (
         <div key={i} className={`tech-card anim-fade-up anim-delay-${i+2}`}>

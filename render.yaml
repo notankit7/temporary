@@ -1,0 +1,19 @@
+# Render Blueprint: deploys the whole site (React + API) as ONE free web service.
+# On render.com: New -> Blueprint -> pick this repo. It will only ask for MONGO_URI.
+services:
+  - type: web
+    name: agrisense
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build && npm install --prefix backend
+    startCommand: npm start --prefix backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: MONGO_URI          # paste your MongoDB Atlas connection string
+        sync: false
+      - key: JWT_SECRET         # generated automatically
+        generateValue: true
+      - key: TZ                 # irrigation times shown in Indian time
+        value: Asia/Kolkata
+      - key: NODE_VERSION
+        value: "22"

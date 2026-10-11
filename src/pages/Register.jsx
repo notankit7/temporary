@@ -1,21 +1,34 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Droplets, Sprout, ArrowLeft } from 'lucide-react';
+import { register, saveSession } from '../services/api';
 
-const Register = () => {
+const today = new Date().toISOString().slice(0, 10);
+
+const Register = ({ setAuth }) => {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name:'', email:'', password:'', confirm:'', location:'', crop:'sugarcane' });
+  const [form, setForm] = useState({ name:'', email:'', password:'', confirm:'', location:'', crop:'sugarcane', sowingDate:today });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const update = (key, val) => setForm(prev => ({...prev, [key]: val}));
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.password) { setError('Please fill all fields'); return; }
     if (form.password !== form.confirm) { setError('Passwords do not match'); return; }
     if (form.password.length < 4) { setError('Password must be at least 4 characters'); return; }
-    alert('Registration successful! Please login.');
-    navigate('/login');
+    setError('');
+    setLoading(true);
+    try {
+      const { confirm: _confirm, ...payload } = form;
+      saveSession(await register(payload));
+      if (setAuth) setAuth(true);
+      navigate('/app/dashboard');
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
   };
 
   return (
@@ -55,16 +68,22 @@ const Register = () => {
             <label>Farm Location</label>
             <input type="text" placeholder="e.g. Pune, Maharashtra" value={form.location} onChange={e => update('location', e.target.value)} />
           </div>
-          <div className="form-group">
-            <label>Crop Type</label>
-            <select value={form.crop} onChange={e => update('crop', e.target.value)}>
-              <option value="sugarcane">Sugarcane</option>
-              <option value="wheat">Wheat</option>
-              <option value="cotton">Cotton</option>
-              <option value="rice">Rice</option>
-            </select>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Crop Type</label>
+              <select value={form.crop} onChange={e => update('crop', e.target.value)}>
+                <option value="sugarcane">Sugarcane</option>
+                <option value="wheat">Wheat</option>
+                <option value="cotton">Cotton</option>
+                <option value="rice">Rice</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Sowing Date</label>
+              <input type="date" max={today} value={form.sowingDate} onChange={e => update('sowingDate', e.target.value)} />
+            </div>
           </div>
-          <button type="submit" className="btn auth-btn">Register</button>
+          <button type="submit" className="btn auth-btn" disabled={loading}>{loading ? 'Creating account…' : 'Register'}</button>
         </form>
 
         <div className="auth-footer">

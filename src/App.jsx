@@ -11,11 +11,10 @@ import Sensors from './pages/Sensors';
 import CropInfo from './pages/CropInfo';
 import Alerts from './pages/Alerts';
 import About from './pages/About';
+import { getToken } from './services/api';
 
 function App() {
-  const [isAuth, setIsAuth] = React.useState(
-    localStorage.getItem('auth_token') === 'true'
-  );
+  const [isAuth, setIsAuth] = React.useState(Boolean(getToken()));
 
   return (
     <BrowserRouter>
@@ -23,7 +22,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login setAuth={setIsAuth} />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/register" element={<Register setAuth={setIsAuth} />} />
         <Route path="/app" element={isAuth ? <Layout setAuth={setIsAuth} /> : <Navigate to="/login" replace />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />

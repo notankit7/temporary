@@ -1,0 +1,481 @@
+=====================================================================
+  AGRISENSE - SMART IRRIGATION ADVISORY SYSTEM
+  Setup Guide + Summary of Backend Work
+=====================================================================
+
+CONTENTS
+  1. What was done
+  2. Project structure
+  3. Requirements
+  4. MongoDB setup (choose ONE option)
+       Option A - MongoDB on another laptop (same Wi-Fi)
+       Option B - MongoDB Atlas (free cloud database) - best for hosting
+       Option C - MongoDB on this same laptop
+  5. Running the project
+  6. Testing that everything works
+  7. Hosting the site online
+  8. Do I have to set up MongoDB every time? (FAQ)
+  9. Troubleshooting
+ 10. API reference
+
+
+---------------------------------------------------------------------
+1. WHAT WAS DONE
+---------------------------------------------------------------------
+
+Before: the React frontend showed fake data from src/data/mockData.js.
+Login accepted any email/password and nothing was saved.
+
+After: a full Node.js + Express + MongoDB backend was built and the
+frontend was connected to it.
+
+BACKEND (new folder: backend/)
+  - User accounts: register + login. Passwords are hashed with bcrypt,
+    logins use JWT tokens (valid 7 days).
+  - Sensor readings stored in MongoDB. Supports:
+      * real IoT devices (ESP32/Arduino) sending readings to the API
+      * a simulator that creates realistic readings for demos
+        (soil dries faster in heat, temperature follows time of day,
+        occasional rain)
+  - New accounts get 24 hours of sample readings so the dashboard is
+    not empty on first login.
+  - Irrigation advisory engine that decides WHEN and HOW MUCH to
+    irrigate, using:
+      * soil moisture vs. per-crop thresholds
+      * temperature
+      * drying trend from the last 12 hours of readings
+      * live rain forecast (if 10mm+ rain is coming, it says "hold")
+      * schedules irrigation at 6 AM / 6 PM to reduce evaporation
+  - Irrigation log: "Mark as Irrigated" records an irrigation event.
+  - Automatic alerts: low/critical moisture, waterlogging, heat,
+    low water tank, heavy rain. Same alert isn't repeated within 3 hrs.
+  - Crop knowledge base for Sugarcane, Wheat, Cotton and Rice
+    (moisture/temperature ranges, growth stages, tips).
+  - Growth stage is calculated from the sowing date.
+  - External API: live weather + 3-day forecast from Open-Meteo
+    (free, no API key needed). The farm location typed at register
+    (e.g. "Pune, Maharashtra") is converted to map coordinates.
+  - Demo account: created automatically on first start (or reset
+    any time with "npm run seed").
+  - Hosting-ready: the backend also serves the built React site, so
+    the whole project deploys as ONE service. render.yaml sets up
+    Render automatically (see section 7).
+  - Clear error messages (wrong password, duplicate email, invalid
+    values, database unreachable, etc.)
+
+FRONTEND CHANGES
+  - src/services/api.js      -> real API calls instead of fake data
+  - src/utils/format.js      -> NEW: "10 mins ago" style time helper
+  - vite.config.js           -> forwards /api requests to the backend
+  - Login.jsx / Register.jsx -> real login/register, loading states,
+                                error messages, new "Sowing Date" field
+  - App.jsx                  -> checks for a real login token
+  - Sidebar.jsx              -> shows the logged-in user's name + crop
+                                (was hardcoded "Param")
+  - Dashboard.jsx            -> live data, user's name, real advisory,
+                                crop health from the current stage
+  - Sensors.jsx              -> "Check Sensor" saves a new reading,
+                                chart shows the last 24h from database
+  - IrrigationAdvisory.jsx   -> real advisory + live rain forecast +
+                                "Mark as Irrigated" button
+  - Alerts.jsx               -> filter buttons work, mark as read,
+                                mark all read, dismiss (X) button
+  - CropInfo.jsx             -> shows the user's own crop and stage
+  - About.jsx                -> Backend now says Node.js, Express, MongoDB
+  - index.css                -> 2 small colour classes added
+  - package.json             -> new scripts "server" and "seed"
+  - src/data/mockData.js     -> now only used by the public Landing page
+
+
+---------------------------------------------------------------------
+2. PROJECT STRUCTURE
+---------------------------------------------------------------------
+
+Wp_2_MiniProject_TY/
+  render.yaml              one-click hosting config for Render
+  SETUP_GUIDE.txt          this file
+  src/                     React frontend
+  backend/
+    .env                   your settings (database address, secret)
+    .env.example           template for .env
+    README.md              backend documentation
+    src/
+      server.js            starts the server
+      app.js               Express app + routes
+      seed.js              creates the demo account
+      config/              environment + database connection
+      models/              MongoDB schemas: User, SensorReading,
+                           Alert, IrrigationEvent
+      routes/              auth, sensors, advisory, irrigation,
+                           alerts, crops, weather
+      services/            advisory engine, alert rules,
+                           simulator, weather
+      middleware/          login check + error handling
+      data/crops.js        crop knowledge base
+
+MongoDB database name: agrisense
+Collections (created automatically): users, sensorreadings, alerts,
+irrigationevents
+
+
+---------------------------------------------------------------------
+3. REQUIREMENTS
+---------------------------------------------------------------------
+
+  - Node.js 18 or newer   (check: node -v)
+  - MongoDB, either installed on a laptop OR a free Atlas account
+  - Internet connection (only needed for the weather forecast;
+    everything else works offline)
+
+
+---------------------------------------------------------------------
+4. MONGODB SETUP  (choose ONE option)
+---------------------------------------------------------------------
+
+You only do this ONCE. See section 8.
+
+=== OPTION A: MongoDB on another laptop (same Wi-Fi) ===
+
+Call the laptop with MongoDB the "DB laptop" and the laptop running
+the project the "project laptop".
+
+ON THE DB LAPTOP:
+
+ Step 1. Install MongoDB Community Server (if not installed)
+         https://www.mongodb.com/try/download/community
+         During install keep "Install MongoDB as a Service" ticked.
+         Optionally also install MongoDB Compass (GUI) and mongosh.
+
+ Step 2. Allow connections from other computers
+         Open Notepad AS ADMINISTRATOR and open:
+           C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg
+         Find:
+           net:
+             port: 27017
+             bindIp: 127.0.0.1
+         Change bindIp to:
+             bindIp: 0.0.0.0
+         Save the file.
+
+ Step 3. Restart MongoDB
+         Press Win+R -> type services.msc -> find "MongoDB Server"
+         -> right-click -> Restart.
+         (or in an Administrator terminal:  net stop MongoDB
+                                             net start MongoDB)
+
+ Step 4. Open port 27017 in the firewall
+         Open PowerShell AS ADMINISTRATOR and run:
+           New-NetFirewallRule -DisplayName "MongoDB 27017" -Direction Inbound -Protocol TCP -LocalPort 27017 -Action Allow
+
+ Step 5. Find the DB laptop's IP address
+         Run:  ipconfig
+         Look under "Wireless LAN adapter Wi-Fi" for
+           IPv4 Address . . . : 192.168.1.20     <- example
+         Write this down.
+
+ Step 6. (Recommended) Add a password
+         Anyone on the same Wi-Fi could otherwise read the database.
+         Open mongosh and run:
+           use admin
+           db.createUser({ user: "agrisense", pwd: "choose-a-password", roles: [{ role: "readWrite", db: "agrisense" }] })
+         Then in mongod.cfg add:
+           security:
+             authorization: enabled
+         and restart MongoDB again (Step 3).
+
+ON THE PROJECT LAPTOP:
+
+ Step 7. Make sure both laptops are on the SAME Wi-Fi / hotspot.
+
+ Step 8. Test the connection. In PowerShell:
+           Test-NetConnection 192.168.1.20 -Port 27017
+         It must say:  TcpTestSucceeded : True
+         If False -> see Troubleshooting (section 9).
+
+ Step 9. Edit backend\.env and set MONGO_URI:
+         Without password:
+           MONGO_URI=mongodb://192.168.1.20:27017/agrisense
+         With password (Step 6):
+           MONGO_URI=mongodb://agrisense:choose-a-password@192.168.1.20:27017/agrisense?authSource=admin
+
+ NOTE: The DB laptop must be switched ON and on the same network
+       whenever you run the project. Its IP can change when it
+       reconnects to Wi-Fi - if it stops working, run ipconfig again
+       and update .env.
+ NOTE: College Wi-Fi often blocks laptop-to-laptop connections.
+       If Step 8 fails on college Wi-Fi, use a mobile hotspot or
+       Option B.
+
+
+=== OPTION B: MongoDB Atlas (free cloud database) - RECOMMENDED ===
+
+No second laptop needed, works from anywhere, and is REQUIRED if you
+want to host the site online (see section 7).
+
+ Step 1. Go to https://www.mongodb.com/atlas and sign up (free).
+ Step 2. Create a cluster -> choose the FREE "M0" tier ->
+         pick a region close to you (e.g. Mumbai) -> Create.
+ Step 3. Database Access -> Add New Database User
+         -> username + password (avoid special characters like @ : /
+            in the password, or they need URL-encoding)
+         -> role "Read and write to any database".
+ Step 4. Network Access -> Add IP Address
+         -> "Allow access from anywhere" (0.0.0.0/0)
+            (needed for hosting, since hosting servers change IPs)
+ Step 5. Database -> Connect -> Drivers -> copy the connection
+         string. It looks like:
+           mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+ Step 6. Put it in backend\.env, adding the database name
+         "agrisense" before the "?":
+           MONGO_URI=mongodb+srv://myuser:mypass@cluster0.xxxxx.mongodb.net/agrisense?retryWrites=true&w=majority
+
+
+=== OPTION C: MongoDB on this same laptop ===
+
+ Install MongoDB Community Server (as a service) and keep the
+ default in backend\.env:
+   MONGO_URI=mongodb://127.0.0.1:27017/agrisense
+
+
+---------------------------------------------------------------------
+5. RUNNING THE PROJECT
+---------------------------------------------------------------------
+
+FIRST TIME ONLY:
+
+  Terminal 1 (backend):
+    cd Wp_2_MiniProject_TY\backend
+    npm install
+    (backend\.env already exists. If it is missing:
+       copy .env.example .env
+     then set MONGO_URI and change JWT_SECRET to a long random text)
+    npm run seed        <- optional, creates a demo account
+
+  Terminal 2 (frontend):
+    cd Wp_2_MiniProject_TY
+    npm install
+
+EVERY TIME:
+
+  Terminal 1:   cd Wp_2_MiniProject_TY\backend
+                npm run dev
+     You should see:
+                MongoDB connected: ...
+                AgriSense API running on http://localhost:5000/api
+
+  Terminal 2:   cd Wp_2_MiniProject_TY
+                npm run dev
+     Open the link it prints, usually http://localhost:5173
+
+  (Shortcut: from Wp_2_MiniProject_TY, "npm run server" starts the
+   backend and "npm run seed" runs the seed.)
+
+DEMO ACCOUNT (after npm run seed):
+    Email:    demo@agrisense.com
+    Password: demo1234
+    Running "npm run seed" again resets the demo account.
+
+Or click Register and create your own account.
+
+
+---------------------------------------------------------------------
+6. TESTING THAT EVERYTHING WORKS
+---------------------------------------------------------------------
+
+  1. Open http://localhost:5000/api/health in a browser.
+     Should show:  "status":"ok","database":"connected"
+  2. Register a new account -> you land on the Dashboard with data.
+  3. Sensors page -> click "Check Sensor" a few times -> values and
+     chart update. Alerts appear when moisture gets low.
+  4. Advisory page -> shows recommendation, reasons, rain forecast.
+     Click "Mark as Irrigated" -> moisture goes up.
+  5. Alerts page -> try the filters, click an alert to mark it read,
+     X to dismiss.
+  6. Log out and log in again -> your data is still there (it is
+     stored in MongoDB).
+  7. (Optional) Open MongoDB Compass, connect with the same MONGO_URI,
+     and look at the "agrisense" database to see the stored data.
+
+
+---------------------------------------------------------------------
+7. HOSTING THE SITE ONLINE
+---------------------------------------------------------------------
+
+IMPORTANT: a hosted website CANNOT use MongoDB running on a laptop at
+home/college. The hosting server is on the internet; your laptop is
+behind Wi-Fi, may be switched off, and its IP keeps changing.
+-> For hosting, use MongoDB ATLAS (Option B).
+
+The project is already prepared so the WHOLE site (React pages + API)
+runs as ONE service on Render, and the database is MongoDB Atlas.
+After these steps, nobody ever needs to install or set up MongoDB.
+
+  Database           -> MongoDB Atlas  (free, in the cloud)
+  Website + backend  -> Render         (free, https://render.com)
+
+How it works:
+  - "npm run build" turns the React app into plain files (dist/).
+  - The Express backend serves those files AND the /api routes,
+    so there is only one URL and nothing to connect together.
+  - render.yaml (in Wp_2_MiniProject_TY/) tells Render exactly how to
+    build and start it, and generates the login secret by itself.
+  - On first start with an empty database, the backend creates the
+    demo account (demo@agrisense.com / demo1234) automatically.
+    Collections are created automatically too.
+
+STEP 1 - Create the Atlas database (ONE time, ~5 minutes)
+         Follow section 4, Option B. Make sure Network Access has
+         "Allow access from anywhere" (0.0.0.0/0). Copy the
+         connection string with /agrisense added, e.g.
+           mongodb+srv://myuser:mypass@cluster0.xxxxx.mongodb.net/agrisense?retryWrites=true&w=majority
+
+STEP 2 - Put the project on GitHub
+         Create a repo whose ROOT is the Wp_2_MiniProject_TY folder
+         (render.yaml and package.json must be at the top level).
+         .env files are NOT uploaded (on purpose - they hold secrets).
+
+STEP 3 - Deploy on Render (ONE time)
+         render.com -> sign in with GitHub -> New -> Blueprint
+         -> choose your repo -> Render reads render.yaml.
+         It asks for only ONE value:
+           MONGO_URI = paste the Atlas string from Step 1
+         Click Apply / Deploy. Wait a few minutes for the build.
+
+STEP 4 - Done
+         You get a link like  https://agrisense.onrender.com
+         Check it works:      https://agrisense.onrender.com/api/health
+                              -> "database":"connected"
+         Log in with demo@agrisense.com / demo1234, or register.
+         Share the link with anyone - it works from any device.
+
+UPDATING THE SITE LATER
+         Just push new code to GitHub. Render rebuilds and redeploys
+         automatically. The data in Atlas is kept.
+
+NOTE: Render's free plan "sleeps" after 15 minutes of no use. The
+      first visit after that takes ~30-50 seconds to load. Open the
+      site a minute before a demo/presentation to wake it up.
+NOTE: Atlas free tier (512 MB) is far more than this project needs.
+      Atlas may pause a free cluster after ~60 days of NO use at all;
+      if that happens, log in to Atlas and click "Resume".
+
+(Without render.yaml you can do the same by hand: New -> Web Service,
+ Build Command:  npm install && npm run build && npm install --prefix backend
+ Start Command:  npm start --prefix backend
+ Env vars: MONGO_URI, JWT_SECRET (any long random text), TZ=Asia/Kolkata)
+
+
+---------------------------------------------------------------------
+8. DO I HAVE TO SET UP MONGODB EVERY TIME? (FAQ)
+---------------------------------------------------------------------
+
+NO. MongoDB setup is a ONE-TIME job.
+
+  - Installing MongoDB, editing mongod.cfg, the firewall rule,
+    creating the Atlas cluster/user - all done once.
+  - The database keeps all data permanently (users, readings,
+    alerts) even after you close everything or restart the laptop.
+  - Collections are created automatically by the backend - you never
+    create tables/collections by hand.
+  - "npm run seed" is optional and only needed once (or to reset
+    the demo account).
+
+After hosting (with Atlas + Render, section 7):
+  - You paste MONGO_URI once into Render. That is the ONLY database
+    step, ever.
+  - From then on the hosted site connects to Atlas automatically,
+    24/7. Nobody installs MongoDB, nobody runs seed, and you don't
+    even need your laptop switched on.
+  - The demo account and all collections are created automatically.
+  - Redeploying new code does NOT erase the data in Atlas.
+  - Visitors (teachers, friends) just open the link - they need
+    nothing installed.
+
+Only these situations need a small change:
+  - Option A (other laptop): if the DB laptop's IP address changes,
+    update MONGO_URI in backend\.env. The DB laptop must also be ON
+    and on the same network whenever you run the project.
+  - You change the database password -> update MONGO_URI.
+  - You move to a different database (e.g. laptop -> Atlas) ->
+    update MONGO_URI. (Data does not move automatically; just
+    re-register or run npm run seed on the new database.)
+
+What you DO need to do every time (when running locally, not hosted):
+  - Start the backend (npm run dev in backend) and the frontend
+    (npm run dev). That's it.
+
+
+---------------------------------------------------------------------
+9. TROUBLESHOOTING
+---------------------------------------------------------------------
+
+"Could not connect to MongoDB at ..."  (backend stops)
+  - Other laptop: is it ON? Same Wi-Fi? Is the MongoDB service
+    running (services.msc)? Is the IP in .env still correct
+    (ipconfig)? Did you set bindIp 0.0.0.0 and restart MongoDB?
+    Is the firewall rule added?
+  - Run: Test-NetConnection <IP> -Port 27017
+    False = network/firewall problem, not a code problem.
+  - College Wi-Fi blocking it -> use a mobile hotspot or Atlas.
+  - Atlas: is your IP allowed in Network Access? Is the
+    username/password correct? Did you add /agrisense before "?" ?
+
+"Authentication failed"
+  - Wrong username/password in MONGO_URI, or missing
+    ?authSource=admin (Option A with password).
+
+Frontend says "Cannot reach the server. Is the backend running?"
+  - Start the backend (Terminal 1) and keep it running.
+  - Port 5000 must be free.
+
+Logged in but pages show errors / sent back to login
+  - Your login expired or the database was changed. Log in again.
+
+Rain forecast shows "Unavailable"
+  - No internet, or the farm location wasn't found. Use a simple
+    city name like "Pune" or "Nashik, Maharashtra".
+
+"Missing required environment variables"
+  - backend\.env is missing. Copy .env.example to .env.
+
+
+---------------------------------------------------------------------
+10. API REFERENCE  (base URL: http://localhost:5000/api)
+---------------------------------------------------------------------
+
+Routes marked * need the header:  Authorization: Bearer <token>
+(The frontend handles this automatically after login.)
+
+  GET    /health                  server + database status
+  POST   /auth/register           create account, returns token
+  POST   /auth/login              log in, returns token
+  GET    /auth/me             *   current user
+  PUT    /auth/me             *   update name/location/crop/sowingDate
+  GET    /sensors             *   latest reading
+  GET    /sensors/history     *   readings for charts (?hours=24)
+  POST   /sensors             *   add a reading (IoT device)
+  POST   /sensors/simulate    *   generate a demo reading
+  GET    /advisory            *   irrigation recommendation
+  POST   /irrigation          *   log an irrigation
+  GET    /irrigation          *   irrigation history
+  GET    /alerts              *   alerts (?type=critical&unread=true)
+  GET    /alerts/summary      *   unread counts
+  PATCH  /alerts/:id/read     *   mark one alert read
+  PATCH  /alerts/read-all     *   mark all read
+  DELETE /alerts/:id          *   dismiss alert
+  GET    /crops                   list of supported crops
+  GET    /crops/mine          *   your crop + current growth stage
+  GET    /crops/:id               one crop's details
+  GET    /weather             *   live weather + 3-day forecast
+
+Connecting a real sensor (ESP32/Arduino): log in once to get a token,
+then have the device send every few minutes:
+  POST http://<backend-ip>:5000/api/sensors
+  Headers: Authorization: Bearer <token>
+           Content-Type: application/json
+  Body:    {"soilMoisture":42,"temperature":30.5,"humidity":65,
+            "rainfall":0,"waterLevel":70}
+(Set JWT_EXPIRES_IN=365d in .env so the device token lasts longer.)
+
+More detail: backend\README.md
+=====================================================================

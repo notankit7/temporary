@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Droplets, Thermometer, Wind, CloudRain, Waves, Zap, ArrowRight, TrendingDown } from 'lucide-react';
+import { Droplets, Thermometer, Wind, CloudRain, Waves, Zap, ArrowRight, TrendingDown, CloudSun } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { fetchSensorData, fetchAdvisoryData, fetchAlertsData } from '../services/api';
+import { fetchSensorData, fetchAdvisoryData, fetchAlertsData, getStoredUser } from '../services/api';
+import { timeAgo } from '../utils/format';
 
 const StatCard = ({ title, value, icon, color, status, delay }) => (
   <div className={`stat-card card anim-fade-up anim-delay-${delay}`}>
@@ -16,42 +17,52 @@ const StatCard = ({ title, value, icon, color, status, delay }) => (
   </div>
 );
 
+const HEALTH = { normal: 'Good', warning: 'Fair', critical: 'Stressed' };
+
 const Dashboard = () => {
-  // State to hold data coming back from our (simulated) API calls,
+  // State to hold data coming back from the backend API,
   // and a loading flag while the fetch is in flight.
   const [sensorData, setSensorData] = useState(null);
   const [advisory, setAdvisory] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const user = getStoredUser();
 
   // useEffect with an empty dependency array runs once, when the
   // page first loads — the usual place to fetch data.
   useEffect(() => {
-    Promise.all([fetchSensorData(), fetchAdvisoryData(), fetchAlertsData()]).then(
-      ([sensors, advisoryData, alertsData]) => {
+    Promise.all([fetchSensorData(), fetchAdvisoryData(), fetchAlertsData({ limit: 3 })])
+      .then(([sensors, advisoryData, alertsData]) => {
         setSensorData(sensors);
         setAdvisory(advisoryData);
         setAlerts(alertsData);
-        setLoading(false);
-      }
-    );
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {
     return <p style={{ padding: '2rem', color: 'var(--text-muted)' }}>Loading dashboard data…</p>;
   }
+  if (error) {
+    return <p style={{ padding: '2rem', color: 'var(--danger)' }}>Could not load dashboard: {error}</p>;
+  }
 
   const moisture = sensorData.soilMoisture;
-  const rec = moisture < 40
-    ? { title: 'Irrigation Recommended', cls: 'critical', icon: <TrendingDown size={18}/> }
-    : moisture <= 70
-      ? { title: 'Moisture Level Normal', cls: 'normal', icon: <Zap size={18}/> }
-      : { title: 'Irrigation Not Required', cls: 'warning', icon: <Zap size={18}/> };
+  const { min: moistMin, max: moistMax } = advisory.thresholds.moisture;
+  const cropName = advisory.crop.name;
+  const needsWater = advisory.status !== 'normal' && advisory.waterMm > 0;
+  const rec = {
+    title: advisory.recommendation,
+    cls: advisory.status,
+    icon: needsWater ? <TrendingDown size={18}/> : advisory.waterMm === 0 && advisory.status !== 'normal' ? <CloudSun size={18}/> : <Zap size={18}/>,
+  };
 
   return (
     <div>
       <header className="page-header anim-fade-up">
-        <h1>Welcome back, Param</h1>
+        <h1>Welcome back, {user?.name?.split(' ')[0] || 'Farmer'}</h1>
         <p>Here's your farm overview for today</p>
       </header>
 
@@ -61,9 +72,11 @@ const Dashboard = () => {
           {rec.icon} {rec.title}
         </div>
         <h2>
-          {moisture < 40
-            ? 'Your sugarcane needs water today'
-            : 'Your crop is doing well'}
+          {needsWater
+            ? `Your ${cropName.toLowerCase()} needs water ${advisory.status === 'critical' ? 'today' : 'soon'}`
+            : advisory.status === 'normal'
+              ? 'Your crop is doing well'
+              : 'Rain is on the way — hold irrigation'}
         </h2>
         <p>
           Soil moisture at <strong style={{color:'var(--primary)'}}>{moisture}%</strong> ·
@@ -79,7 +92,7 @@ const Dashboard = () => {
       <div className="stats-grid">
         <StatCard title="Soil Moisture" value={`${sensorData.soilMoisture}%`}
           icon={<Droplets size={22}/>} color="var(--primary)"
-          status={moisture < 40 ? {type:'warning',text:'Low'} : {type:'normal',text:'OK'}} delay={1} />
+          status={moisture < moistMin ? {type:'warning',text:'Low'} : moisture > moistMax ? {type:'warning',text:'High'} : {type:'normal',text:'OK'}} delay={1} />
         <StatCard title="Temperature" value={`${sensorData.temperature}°C`}
           icon={<Thermometer size={22}/>} color="var(--warning)" delay={2} />
         <StatCard title="Humidity" value={`${sensorData.humidity}%`}
@@ -95,11 +108,12 @@ const Dashboard = () => {
         <div className="card alerts-widget anim-fade-up anim-delay-3">
           <h3>Recent Alerts</h3>
           <div className="alert-list">
+            {alerts.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No alerts yet.</p>}
             {alerts.map(a => (
               <div key={a.id} className={`alert-item alert-${a.type}`}>
                 <div className="alert-content">
                   <p>{a.message}</p>
-                  <span>{a.time}</span>
+                  <span>{timeAgo(a.createdAt)}</span>
                 </div>
               </div>
             ))}
@@ -111,9 +125,12 @@ const Dashboard = () => {
           <h3>Crop Health</h3>
           <div className="health-status">
             <div className="health-circle">
-              <span>Good</span>
+              <span>{HEALTH[advisory.status]}</span>
             </div>
-            <p>Sugarcane is in Grand Growth stage. Maintain moisture above 40%.</p>
+            <p>
+              {cropName} is in the {advisory.stage.name} stage (day {advisory.stage.daysSinceSowing}).
+              Maintain moisture between {moistMin}% and {moistMax}%.
+            </p>
           </div>
         </div>
       </div>

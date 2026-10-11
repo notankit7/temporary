@@ -564,6 +564,8 @@ a { text-decoration: none; color: inherit; }
 @media (max-width: 768px) { .advisory-content { grid-template-columns: 1fr; } }
 .recommendation-box h3 { font-size: 1.3rem; margin-bottom: 1.25rem; }
 .highlight-critical { color: var(--danger); }
+.highlight-warning { color: var(--warning); }
+.highlight-normal { color: var(--success); }
 .recommendation-details { display: flex; flex-direction: column; gap: 0.75rem; }
 .detail-item {
   display: flex; align-items: center; gap: 1rem;

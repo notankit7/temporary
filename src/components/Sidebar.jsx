@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Droplets, Activity, Leaf, Bell, Info, X, LogOut, Home } from 'lucide-react';
+import { clearSession, getStoredUser } from '../services/api';
 
 const navItems = [
   { path: '/app/dashboard', name: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -13,9 +14,12 @@ const navItems = [
 
 const Sidebar = ({ mobileOpen, setMobileOpen, setAuth }) => {
   const navigate = useNavigate();
+  const user = getStoredUser();
+  const name = user?.name || 'Farmer';
+  const crop = user?.crop ? user.crop.charAt(0).toUpperCase() + user.crop.slice(1) : '';
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token');
+    clearSession();
     if (setAuth) setAuth(false);
     navigate('/login');
   };
@@ -51,10 +55,10 @@ const Sidebar = ({ mobileOpen, setMobileOpen, setAuth }) => {
 
         <div className="sidebar-footer">
           <div className="user-profile">
-            <div className="avatar">P</div>
+            <div className="avatar">{name.charAt(0).toUpperCase()}</div>
             <div className="user-info">
-              <span className="name">Param</span>
-              <span className="role">Farmer</span>
+              <span className="name">{name}</span>
+              <span className="role">Farmer{crop && ` · ${crop}`}</span>
             </div>
           </div>
           <button className="logout-btn" onClick={handleLogout}>
